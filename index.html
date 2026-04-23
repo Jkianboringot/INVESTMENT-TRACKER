@@ -549,49 +549,53 @@ async function syncPrices() {
 
 async function fetchYahooPrice(ticker) {
   const symbol = ticker + '.PS';
+  const yUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=5d`;
 
-  // Method 1: allorigins proxy -> Yahoo v8
+  // Method 1: thingproxy (allows all origins including github.io)
   try {
-    const yUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=5d`;
-    const res = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(yUrl)}`);
-    if (res.ok) {
-      const outer = await res.json();
-      if (outer?.contents) {
-        const data = JSON.parse(outer.contents);
-        const meta = data?.chart?.result?.[0]?.meta;
-        const price = meta?.regularMarketPrice || meta?.previousClose;
-        if (price && price > 0) return parseFloat(price.toFixed(4));
-      }
-    }
-  } catch(e) {}
-
-  // Method 2: corsproxy.io -> Yahoo v8
-  try {
-    const yUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=5d`;
-    const res = await fetch(`https://corsproxy.io/?${encodeURIComponent(yUrl)}`);
+    const res = await fetch(`https://thingproxy.freeboard.io/fetch/${yUrl}`);
     if (res.ok) {
       const data = await res.json();
       const meta = data?.chart?.result?.[0]?.meta;
       const price = meta?.regularMarketPrice || meta?.previousClose;
-      if (price && price > 0) return parseFloat(price.toFixed(4));
+      if (price && price > 0) { console.log(`thingproxy OK: ${ticker}=${price}`); return parseFloat(price.toFixed(4)); }
     }
-  } catch(e) {}
+  } catch(e) { console.log(`thingproxy fail ${ticker}: ${e.message}`); }
 
-  // Method 3: allorigins -> Yahoo v7 quote
+  // Method 2: codetabs proxy
   try {
-    const yUrl = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbol}`;
-    const res = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(yUrl)}`);
+    const res = await fetch(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(yUrl)}`);
     if (res.ok) {
-      const outer = await res.json();
-      if (outer?.contents) {
-        const data = JSON.parse(outer.contents);
-        const quote = data?.quoteResponse?.result?.[0];
-        const price = quote?.regularMarketPrice || quote?.ask;
-        if (price && price > 0) return parseFloat(price.toFixed(4));
-      }
+      const data = await res.json();
+      const meta = data?.chart?.result?.[0]?.meta;
+      const price = meta?.regularMarketPrice || meta?.previousClose;
+      if (price && price > 0) { console.log(`codetabs OK: ${ticker}=${price}`); return parseFloat(price.toFixed(4)); }
     }
-  } catch(e) {}
+  } catch(e) { console.log(`codetabs fail ${ticker}: ${e.message}`); }
 
+  // Method 3: htmldriven cors proxy
+  try {
+    const res = await fetch(`https://cors.eu.org/${yUrl}`, {headers:{'x-requested-with':'XMLHttpRequest'}});
+    if (res.ok) {
+      const data = await res.json();
+      const meta = data?.chart?.result?.[0]?.meta;
+      const price = meta?.regularMarketPrice || meta?.previousClose;
+      if (price && price > 0) { console.log(`corseu OK: ${ticker}=${price}`); return parseFloat(price.toFixed(4)); }
+    }
+  } catch(e) { console.log(`corseu fail ${ticker}: ${e.message}`); }
+
+  // Method 4: yahoo finance v7 via codetabs
+  try {
+    const qUrl = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbol}`;
+    const res = await fetch(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(qUrl)}`);
+    if (res.ok) {
+      const data = await res.json();
+      const price = data?.quoteResponse?.result?.[0]?.regularMarketPrice;
+      if (price && price > 0) { console.log(`codetabs-v7 OK: ${ticker}=${price}`); return parseFloat(price.toFixed(4)); }
+    }
+  } catch(e) { console.log(`codetabs-v7 fail ${ticker}: ${e.message}`); }
+
+  console.log(`ALL METHODS FAILED for ${ticker}`);
   return null;
 }
 
