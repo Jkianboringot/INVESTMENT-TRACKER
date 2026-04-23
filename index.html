@@ -90,7 +90,8 @@ body { background: var(--bg); color: var(--text); font-family: var(--font); font
   display: flex; align-items: center; justify-content: center; gap: 6px;
 }
 .sync-btn:hover { background: rgba(240,180,41,0.25); }
-.sync-btn.spinning .sync-icon { animation: spin 1s linear infinite; }
+.sync-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.sync-btn.spinning .sync-icon { animation: spin 1s linear infinite; display: inline-block; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .last-sync { font-family: var(--mono); font-size: 9px; color: var(--muted); text-align: center; margin-top: 8px; }
 
@@ -157,6 +158,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 .badge-stock { background: rgba(59,130,246,0.12); color: var(--blue); }
 .badge-fund { background: rgba(168,85,247,0.12); color: #A855F7; }
 .badge-reit { background: rgba(234,179,8,0.12); color: #EAB308; }
+.badge-bond { background: rgba(16,185,129,0.12); color: var(--green); }
 
 /* ── FORMS ── */
 .card {
@@ -245,10 +247,12 @@ tr:hover td { background: rgba(255,255,255,0.02); }
   transform: translateY(10px);
   transition: all 0.3s;
   pointer-events: none;
+  max-width: 320px;
 }
 .toast.show { opacity: 1; transform: translateY(0); }
 .toast.success { border-color: rgba(16,185,129,0.4); color: var(--green); }
 .toast.error { border-color: rgba(239,68,68,0.4); color: var(--red); }
+.toast.info { border-color: rgba(59,130,246,0.4); color: var(--blue); }
 
 /* ── SECTION DIVIDER ── */
 .section-label {
@@ -257,6 +261,19 @@ tr:hover td { background: rgba(255,255,255,0.02); }
   text-transform: uppercase;
   margin: 24px 0 12px;
 }
+
+/* ── PRICE SOURCE INFO ── */
+.source-info {
+  display: flex; align-items: center; gap: 8px;
+  font-family: var(--mono); font-size: 10px; color: var(--muted);
+  margin-bottom: 16px; padding: 8px 12px;
+  background: var(--surface2); border-radius: 6px;
+  border: 1px solid var(--border);
+}
+.source-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.source-dot.green { background: var(--green); }
+.source-dot.gold { background: var(--gold); }
+.source-dot.grey { background: var(--muted); }
 
 /* ── RESPONSIVE ── */
 @media (max-width: 768px) {
@@ -269,6 +286,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
   .kpi-grid { grid-template-columns: 1fr 1fr; }
   .form-grid { grid-template-columns: 1fr 1fr; }
   .page-title { font-size: 20px; }
+  #dashBottom { grid-template-columns: 1fr !important; }
 }
 @media (max-width: 420px) {
   .kpi-grid { grid-template-columns: 1fr 1fr; }
@@ -291,7 +309,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
       <div class="mark">PSE Portfolio</div>
-      <div class="sub">TRACKER v1.0</div>
+      <div class="sub">TRACKER v1.1</div>
     </div>
     <nav class="nav">
       <div class="nav-item active" onclick="showPage('dashboard')">
@@ -342,6 +360,11 @@ tr:hover td { background: rgba(255,255,255,0.02); }
       <div class="page-header">
         <div class="page-title">Holdings</div>
         <div class="page-sub">AUTO-CALCULATED · READ ONLY</div>
+      </div>
+      <div class="source-info">
+        <span class="source-dot green"></span> LIVE = PHIsix API (PSE stocks/REITs) &nbsp;·&nbsp;
+        <span class="source-dot gold"></span> MANUAL = Your NAV input (funds) &nbsp;·&nbsp;
+        <span class="source-dot grey"></span> CACHED = Last known price
       </div>
       <div class="table-wrap">
         <table id="holdingsTable">
@@ -429,7 +452,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
             <input type="text" id="as-name" placeholder="e.g. JFC or ATRAM Global...">
           </div>
           <div class="form-group">
-            <label>Ticker (stocks only)</label>
+            <label>Ticker (stocks/REITs only)</label>
             <input type="text" id="as-ticker" placeholder="e.g. JFC">
           </div>
           <div class="form-group">
@@ -442,7 +465,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
             </select>
           </div>
           <div class="form-group">
-            <label>Manual NAV (funds only)</label>
+            <label>Manual NAV (funds/bonds)</label>
             <input type="number" id="as-nav" placeholder="Leave blank for stocks" step="any">
           </div>
           <div class="form-group">
@@ -459,7 +482,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
         <table>
           <thead><tr>
             <th>NAME</th><th>TICKER</th><th>TYPE</th>
-            <th>MANUAL NAV</th><th>LAST PRICE</th><th>LAST UPDATED</th><th>SECTOR</th><th></th>
+            <th>MANUAL NAV</th><th>LAST PRICE</th><th>PRICE SOURCE</th><th>LAST UPDATED</th><th>SECTOR</th><th></th>
           </tr></thead>
           <tbody id="assetsBody"></tbody>
         </table>
@@ -480,14 +503,13 @@ const DB = {
   set: (key, val) => localStorage.setItem('pse_'+key, JSON.stringify(val)),
 };
 
-// Default assets matching user's actual portfolio
 const DEFAULT_ASSETS = [
-  { id: 'JFC',  name: 'JFC',  ticker: 'JFC',  type: 'STOCK', manualNav: 0, lastPrice: 0, lastUpdated: null, sector: 'Food & Beverage' },
-  { id: 'RCR',  name: 'RCR',  ticker: 'RCR',  type: 'REIT',  manualNav: 0, lastPrice: 0, lastUpdated: null, sector: 'REIT' },
-  { id: 'MBT',  name: 'MBT',  ticker: 'MBT',  type: 'STOCK', manualNav: 0, lastPrice: 0, lastUpdated: null, sector: 'Banking' },
-  { id: 'ATRAM', name: 'ATRAM Global Technology Feeder Fund', ticker: '', type: 'FUND', manualNav: 458.421478, lastPrice: 458.421478, lastUpdated: new Date().toISOString(), sector: 'Global Tech' },
-  { id: 'MANULIFE_REIT', name: 'Manulife Asia Pacific REIT Fund of Fund', ticker: '', type: 'FUND', manualNav: 51.271, lastPrice: 51.271, lastUpdated: new Date().toISOString(), sector: 'Asia REIT' },
-  { id: 'PSIF', name: 'Philipines Stock Index Fund (Units)', ticker: '', type: 'FUND', manualNav: 891.63, lastPrice: 891.63, lastUpdated: new Date().toISOString(), sector: 'PH Equity' },
+  { id: 'JFC',  name: 'JFC',  ticker: 'JFC',  type: 'STOCK', manualNav: 0, lastPrice: 0, lastUpdated: null, sector: 'Food & Beverage', priceSource: null },
+  { id: 'RCR',  name: 'RCR',  ticker: 'RCR',  type: 'REIT',  manualNav: 0, lastPrice: 0, lastUpdated: null, sector: 'REIT', priceSource: null },
+  { id: 'MBT',  name: 'MBT',  ticker: 'MBT',  type: 'STOCK', manualNav: 0, lastPrice: 0, lastUpdated: null, sector: 'Banking', priceSource: null },
+  { id: 'ATRAM', name: 'ATRAM Global Technology Feeder Fund', ticker: '', type: 'FUND', manualNav: 458.421478, lastPrice: 458.421478, lastUpdated: new Date().toISOString(), sector: 'Global Tech', priceSource: 'manual' },
+  { id: 'MANULIFE_REIT', name: 'Manulife Asia Pacific REIT Fund of Fund', ticker: '', type: 'FUND', manualNav: 51.271, lastPrice: 51.271, lastUpdated: new Date().toISOString(), sector: 'Asia REIT', priceSource: 'manual' },
+  { id: 'PSIF', name: 'Philipines Stock Index Fund (Units)', ticker: '', type: 'FUND', manualNav: 891.63, lastPrice: 891.63, lastUpdated: new Date().toISOString(), sector: 'PH Equity', priceSource: 'manual' },
 ];
 
 const DEFAULT_TRANSACTIONS = [
@@ -503,6 +525,9 @@ let assets       = DB.get('assets', DEFAULT_ASSETS);
 let transactions = DB.get('transactions', DEFAULT_TRANSACTIONS);
 let lastSync     = DB.get('lastSync', null);
 
+// Ensure existing assets have priceSource field
+assets = assets.map(a => ({ priceSource: null, ...a }));
+
 function save() {
   DB.set('assets', assets);
   DB.set('transactions', transactions);
@@ -510,28 +535,81 @@ function save() {
 }
 
 // ═══════════════════════════════════════════════════════
-// PRICE FETCHING — Yahoo Finance (works in browsers!)
+// PRICE FETCHING
+// Priority: PHIsix API → Cloudflare Worker (Yahoo) → give up
 // ═══════════════════════════════════════════════════════
+
+// Your Cloudflare Worker URL
+const WORKER_URL = 'https://falling-rice-119a.jamesboringot4.workers.dev';
+
+async function fetchPHIsix(ticker) {
+  // PHIsix is a dedicated free PSE API — no CORS issues, reliable
+  try {
+    const res = await fetch(`https://phisix-api3.appspot.com/stocks/${ticker}.json`, {
+      headers: { 'Accept': 'application/json' }
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const price = parseFloat(data?.stock?.[0]?.price?.amount);
+    if (price > 0) {
+      console.log(`PHIsix OK: ${ticker} = ₱${price}`);
+      return { price, source: 'phisix' };
+    }
+  } catch(e) {
+    console.log(`PHIsix fail ${ticker}: ${e.message}`);
+  }
+  return null;
+}
+
+async function fetchWorker(ticker) {
+  // Cloudflare Worker fallback (Yahoo Finance via worker)
+  try {
+    const res = await fetch(`${WORKER_URL}?ticker=${ticker}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const price = parseFloat(data?.price);
+    if (price > 0) {
+      console.log(`Worker OK: ${ticker} = ₱${price}`);
+      return { price, source: 'yahoo' };
+    }
+  } catch(e) {
+    console.log(`Worker fail ${ticker}: ${e.message}`);
+  }
+  return null;
+}
+
 async function syncPrices() {
   const btn = document.getElementById('syncBtn');
   btn.classList.add('spinning');
   btn.disabled = true;
 
-  const stockAssets = assets.filter(a => a.type === 'STOCK' || a.type === 'REIT');
+  const stockAssets = assets.filter(a => (a.type === 'STOCK' || a.type === 'REIT') && a.ticker);
   let updated = 0, failed = 0;
 
+  showToast(`🔄 Fetching ${stockAssets.length} stock prices…`, 'info');
+
   for (const asset of stockAssets) {
-    if (!asset.ticker) continue;
-    const price = await fetchYahooPrice(asset.ticker);
-    console.log(`${asset.ticker}: price=${price}`);
-    if (price) {
-      asset.lastPrice   = price;
+    // Try PHIsix first (PSE-specific, most reliable)
+    let result = await fetchPHIsix(asset.ticker);
+
+    // If PHIsix fails, fall back to Cloudflare Worker
+    if (!result) {
+      result = await fetchWorker(asset.ticker);
+    }
+
+    if (result) {
+      asset.lastPrice   = parseFloat(result.price.toFixed(4));
       asset.lastUpdated = new Date().toISOString();
+      asset.priceSource = result.source; // 'phisix' or 'yahoo'
       updated++;
     } else {
+      // Keep old price but mark as cached
+      asset.priceSource = 'cached';
       failed++;
+      console.warn(`FAILED all sources for ${asset.ticker}`);
     }
-    await sleep(300); // Small delay between requests
+
+    await sleep(200); // small delay between requests
   }
 
   lastSync = new Date().toISOString();
@@ -541,27 +619,13 @@ async function syncPrices() {
   btn.classList.remove('spinning');
   btn.disabled = false;
 
-  const msg = failed === 0
-    ? `✅ Updated ${updated} stock prices`
-    : `⚠️ Updated ${updated}, failed ${failed} (market may be closed)`;
-  showToast(msg, failed === 0 ? 'success' : 'error');
-}
-
-async function fetchYahooPrice(ticker) {
-  // Your personal Cloudflare Worker — no CORS issues, no rate limits
-  try {
-    const res = await fetch(`https://falling-rice-119a.jamesboringot4.workers.dev?ticker=${ticker}`);
-    if (res.ok) {
-      const data = await res.json();
-      const price = data?.price;
-      if (price && price > 0) {
-        console.log(`Worker OK: ${ticker}=${price}`);
-        return parseFloat(price.toFixed(4));
-      }
-    }
-  } catch(e) { console.log(`Worker fail ${ticker}: ${e.message}`); }
-  console.log(`FAILED: ${ticker}`);
-  return null;
+  if (failed === 0) {
+    showToast(`✅ Updated ${updated} stock prices`, 'success');
+  } else if (updated > 0) {
+    showToast(`⚠️ Updated ${updated}, failed ${failed} (PSE may be closed)`, 'error');
+  } else {
+    showToast(`❌ All price fetches failed. PSE may be closed or APIs down.`, 'error');
+  }
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
@@ -602,16 +666,26 @@ function calcHoldings() {
     const glPct        = h.cost > 0 ? gl / h.cost : 0;
     const netReturn    = gl + h.dividends - h.fees;
 
+    // Determine display source
+    let displaySource = 'cached';
+    if (asset.type === 'FUND' || asset.type === 'BOND') {
+      displaySource = 'manual';
+    } else if (asset.priceSource === 'phisix' || asset.priceSource === 'yahoo') {
+      displaySource = 'live';
+    } else if (asset.lastUpdated) {
+      displaySource = 'cached';
+    }
+
     holdings.push({
       name, type: asset.type || 'STOCK',
       qty: h.qty, avgCost, cost: h.cost,
       currentPrice, marketValue, gl, glPct,
       dividends: h.dividends, fees: h.fees, netReturn,
-      priceSource: asset.lastUpdated ? (asset.type === 'FUND' ? 'manual' : 'live') : 'cached',
+      priceSource: displaySource,
+      rawSource: asset.priceSource,
     });
   }
 
-  // Calc allocation
   const total = holdings.reduce((s, h) => s + h.marketValue, 0);
   holdings.forEach(h => { h.alloc = total > 0 ? h.marketValue / total : 0; });
   return { holdings, total };
@@ -636,8 +710,6 @@ function renderDashboard() {
   const totalDiv      = holdings.reduce((s, h) => s + h.dividends, 0);
   const totalFees     = holdings.reduce((s, h) => s + h.fees, 0);
   const netReturn     = totalGL + totalDiv - totalFees;
-  const best          = holdings.reduce((b, h) => h.glPct > (b?.glPct ?? -Infinity) ? h : b, null);
-  const worst         = holdings.reduce((w, h) => h.glPct < (w?.glPct ?? Infinity) ? h : w, null);
 
   document.getElementById('kpiGrid').innerHTML = `
     <div class="kpi"><div class="kpi-label">Total Value</div><div class="kpi-value td-gold">${fmt(total)}</div><div class="kpi-sub">${holdings.length} positions</div></div>
@@ -648,7 +720,6 @@ function renderDashboard() {
     <div class="kpi red"><div class="kpi-label">Total Fees</div><div class="kpi-value">${fmt(totalFees)}</div><div class="kpi-sub">All transactions</div></div>
   `;
 
-  // Allocation
   const colors = ['#F0B429','#10B981','#3B82F6','#A855F7','#EF4444','#F97316','#06B6D4'];
   const sorted = [...holdings].sort((a, b) => b.marketValue - a.marketValue);
   document.getElementById('allocList').innerHTML = sorted.map((h, i) => `
@@ -663,7 +734,6 @@ function renderDashboard() {
     </div>
   `).join('');
 
-  // Performance
   const byGL = [...holdings].sort((a, b) => b.glPct - a.glPct);
   document.getElementById('perfList').innerHTML = byGL.map(h => `
     <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
@@ -707,11 +777,9 @@ function renderHoldings() {
 }
 
 function renderTransactions() {
-  // Populate asset dropdown
   const sel = document.getElementById('tx-asset');
   sel.innerHTML = assets.map(a => `<option value="${a.name}">${a.name}</option>`).join('');
 
-  // Set default date to today
   if (!document.getElementById('tx-date').value) {
     document.getElementById('tx-date').value = new Date().toISOString().split('T')[0];
   }
@@ -737,23 +805,29 @@ function renderTransactions() {
 }
 
 function renderAssets() {
-  document.getElementById('assetsBody').innerHTML = assets.map(a => `
+  document.getElementById('assetsBody').innerHTML = assets.map(a => {
+    const isFundOrBond = a.type === 'FUND' || a.type === 'BOND';
+    const sourceLabel = a.priceSource
+      ? `<span class="badge badge-${a.priceSource === 'phisix' ? 'buy' : a.priceSource === 'yahoo' ? 'stock' : a.priceSource === 'manual' ? 'div' : 'sell'}">${a.priceSource}</span>`
+      : '<span style="color:var(--muted);font-size:11px">—</span>';
+    return `
     <tr>
       <td><strong>${a.name}</strong></td>
       <td class="td-mono td-gold">${a.ticker || '—'}</td>
       <td><span class="badge badge-${a.type.toLowerCase()}">${a.type}</span></td>
       <td>
         <input type="number" value="${a.manualNav || ''}" placeholder="—"
-          style="background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--mono);font-size:12px;padding:5px 8px;width:110px"
+          style="background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--mono);font-size:12px;padding:5px 8px;width:110px;outline:none;"
           onchange="updateManualNav('${a.id}', this.value)"
-          ${a.type !== 'FUND' && a.type !== 'BOND' ? 'disabled style="opacity:0.3;background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--mono);font-size:12px;padding:5px 8px;width:110px"' : ''}>
+          ${!isFundOrBond ? 'disabled style="opacity:0.3;background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--mono);font-size:12px;padding:5px 8px;width:110px;"' : ''}>
       </td>
       <td class="td-mono">${a.lastPrice > 0 ? fmt(a.lastPrice) : '—'}</td>
-      <td style="font-family:var(--mono);font-size:11px;color:var(--muted)">${a.lastUpdated ? new Date(a.lastUpdated).toLocaleDateString('en-PH') : '—'}</td>
+      <td>${sourceLabel}</td>
+      <td style="font-family:var(--mono);font-size:11px;color:var(--muted)">${a.lastUpdated ? new Date(a.lastUpdated).toLocaleString('en-PH', {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '—'}</td>
       <td style="color:var(--muted2)">${a.sector || '—'}</td>
       <td><button class="btn btn-red" style="padding:4px 10px;font-size:11px" onclick="deleteAsset('${a.id}')">✕</button></td>
     </tr>
-  `).join('');
+  `}).join('');
 }
 
 function renderLastSync() {
@@ -783,9 +857,8 @@ function addTransaction() {
   transactions.push({ id, date, asset, type, qty, price, fees, notes });
   save();
   renderAll();
-  showToast(`✅ ${type} transaction added for ${asset}`,'success');
+  showToast(`✅ ${type} transaction added for ${asset}`, 'success');
 
-  // Clear qty, price, fees, notes
   document.getElementById('tx-qty').value   = '';
   document.getElementById('tx-price').value = '';
   document.getElementById('tx-fees').value  = '0';
@@ -810,7 +883,8 @@ function addAsset() {
   if (assets.find(a => a.name === name)) { showToast('Asset already exists', 'error'); return; }
 
   const id = ticker || name.replace(/\s+/g,'_').toUpperCase();
-  assets.push({ id, name, ticker, type, manualNav: nav, lastPrice: nav, lastUpdated: nav ? new Date().toISOString() : null, sector });
+  const priceSource = nav > 0 ? 'manual' : null;
+  assets.push({ id, name, ticker, type, manualNav: nav, lastPrice: nav, lastUpdated: nav ? new Date().toISOString() : null, sector, priceSource });
   save(); renderAll();
   showToast(`✅ ${name} added`, 'success');
 
@@ -835,6 +909,7 @@ function updateManualNav(id, val) {
   asset.manualNav   = price;
   asset.lastPrice   = price;
   asset.lastUpdated = new Date().toISOString();
+  asset.priceSource = 'manual';
   save(); renderAll();
   showToast(`✅ NAV updated for ${asset.name}`, 'success');
 }
@@ -871,15 +946,25 @@ function showToast(msg, type = 'success') {
   const t = document.getElementById('toast');
   t.textContent = msg;
   t.className = `toast ${type} show`;
-  setTimeout(() => t.classList.remove('show'), 3000);
+  clearTimeout(window._toastTimer);
+  window._toastTimer = setTimeout(() => t.classList.remove('show'), 3500);
 }
 
 // ═══════════════════════════════════════════════════════
-// INIT
+// INIT — Smart auto-sync (only if >1 hour since last sync)
 // ═══════════════════════════════════════════════════════
 renderAll();
-// Auto-sync prices on load (silently)
-setTimeout(() => syncPrices(), 1000);
+
+const ONE_HOUR = 60 * 60 * 1000;
+const shouldSync = !lastSync || (Date.now() - new Date(lastSync).getTime() > ONE_HOUR);
+
+if (shouldSync) {
+  // Auto-sync on load if stale or never synced
+  setTimeout(() => syncPrices(), 1200);
+} else {
+  const minsAgo = Math.round((Date.now() - new Date(lastSync).getTime()) / 60000);
+  setTimeout(() => showToast(`📦 Using cached prices (${minsAgo}m ago) · Click "Update Prices" to refresh`, 'info'), 500);
+}
 </script>
 </body>
 </html>
