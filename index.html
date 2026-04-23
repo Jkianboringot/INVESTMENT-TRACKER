@@ -550,7 +550,7 @@ async function syncPrices() {
 async function fetchYahooPrice(ticker) {
   // Your personal Cloudflare Worker — no CORS issues, no rate limits
   try {
-    const res = await fetch(`https://*-falling-rice-119a.jamesboringot4.workers.dev?ticker=${ticker}`);
+    const res = await fetch(`https://falling-rice-119a.jamesboringot4.workers.dev?ticker=${ticker}`);
     if (res.ok) {
       const data = await res.json();
       const price = data?.price;
